@@ -1,0 +1,69 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: nccltest
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+           nodeSelector:
+             nvidia.com/gpu.machine: DGXB200
+           containers:
+           - image: ghcr.io/coreweave/nccl-tests:13.0.2-devel-ubuntu24.04-nccl2.29.2-1-d73ec07
+             name: nccltest
+             imagePullPolicy: IfNotPresent
+             command:
+             - /bin/bash
+             - "-c"
+             args:
+             - |
+                export NCCL_NET_PLUGIN=none
+                export NCCL_IB_DISABLE=0
+                export NCCL_SOCKET_IFNAME=eth0
+                export NCCL_MIN_NCHANNELS=16
+                mpirun --allow-run-as-root \
+                 -x NCCL_NET_PLUGIN \
+                 -x NCCL_IB_DISABLE \
+                 -x NCCL_SOCKET_IFNAME \
+                 -np 16 \
+                 -bind-to numa -map-by ppr:4:numa \
+                 -mca btl ^openib \
+                 -mca btl_tcp_if_include eth0 \
+                 -mca oob_tcp_if_include eth0 \
+                 -mca coll_hcoll_enable 0 \
+                 -mca coll_ucc_enable 0 \
+                 /opt/nccl-tests/build/all_reduce_perf -b 1G -e 8G -f 2 -g 1
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          nodeSelector:
+            nvidia.com/gpu.machine: DGXB200
+          volumes:
+          # FIX 1: Increase Shared Memory (required for B200 NCCL coordination)
+          - name: shm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 8Gi
+          containers:
+          - image: ghcr.io/coreweave/nccl-tests:13.0.2-devel-ubuntu24.04-nccl2.29.2-1-d73ec07
+            name: nccltest
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              capabilities:
+                add: [ "IPC_LOCK" ]
+            volumeMounts:
+            - mountPath: /dev/shm
+              name: shm
+            resources:
+              requests:
+                nvidia.com/hostdev: 8
+                nvidia.com/gpu: 8
+              limits:
+                nvidia.com/hostdev: 8
+                nvidia.com/gpu: 8

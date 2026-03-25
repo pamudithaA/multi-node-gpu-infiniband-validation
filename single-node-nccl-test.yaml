@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nccl-test
+  labels:
+    app: nccl-test
+spec:
+  selector:
+    matchLabels:
+      app: nccl-test
+  template:
+    metadata:
+      labels:
+        app: nccl-test
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+        - name: nvidia-smi
+          image: ghcr.io/coreweave/nccl-tests:13.0.2-devel-ubuntu24.04-nccl2.29.2-1-d73ec07
+          command: ["/bin/bash", "-c", "/opt/nccl-tests/build/all_reduce_perf -b 1G -e 8G -f 2 -g 8"]
+          resources:
+            requests:
+              nvidia.com/gpu: 8
+            limits:
+              nvidia.com/gpu: 8
